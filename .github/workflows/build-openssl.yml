@@ -1,0 +1,87 @@
+name: Build OpenSSL for Huawei ARM
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - huawei_1_0_2t
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            perl \
+            wget \
+            xz-utils \
+            rsync \
+            file
+
+      - name: Download Linaro GCC 4.9.4
+        run: |
+          wget -O /tmp/gcc.tar.xz \
+            https://mirrors.dotsrc.org/armbian-dl/_toolchain/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabi.tar.xz
+
+          mkdir -p $HOME/toolchains
+          tar -xf /tmp/gcc.tar.xz -C $HOME/toolchains
+
+          echo "$HOME/toolchains/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabi/bin" >> $GITHUB_PATH
+
+      - name: Check compiler
+        run: |
+          arm-linux-gnueabi-gcc --version
+          arm-linux-gnueabi-ld --version
+
+      - name: Patch build.sh toolchain path
+        run: |
+          sed -i \
+            's|export PATH="/home/valdikss/mobile-modem-router/e5372/kernel/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabi/bin:$PATH"|export PATH="$HOME/toolchains/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabi/bin:$PATH"|' \
+            build.sh
+
+          chmod +x build.sh
+
+      - name: Build OpenSSL
+        run: |
+          ./build.sh -j$(nproc)
+
+      - name: Show resulting files
+        run: |
+          echo "===== vfp3 ====="
+          find installed/huawei/vfp3 -type f -exec file {} \; || true
+
+          echo "===== novfp ====="
+          find installed/huawei/novfp -type f -exec file {} \; || true
+
+      - name: Package builds
+        run: |
+          tar -czf openssl-huawei-vfp3.tar.gz \
+            -C installed/huawei vfp3
+
+          tar -czf openssl-huawei-novfp.tar.gz \
+            -C installed/huawei novfp
+
+      - name: Upload VFP3 build
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-huawei-vfp3
+          path: openssl-huawei-vfp3.tar.gz
+
+      - name: Upload NOVFP build
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-huawei-novfp
+          path: openssl-huawei-novfp.tar.gz
+
+      - name: Upload complete install folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: openssl-huawei-all
+          path: installed/huawei/
